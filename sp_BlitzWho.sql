@@ -125,16 +125,6 @@ SET @SortOrder = REPLACE(LOWER(@SortOrder), N' ', N'_');
 SET @ProductVersion = CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(128));
 SELECT @ProductVersionMajor = SUBSTRING(@ProductVersion, 1,CHARINDEX('.', @ProductVersion) + 1 ),
     @ProductVersionMinor = PARSENAME(CONVERT(VARCHAR(32), @ProductVersion), 2)
-IF EXISTS (SELECT * FROM sys.all_columns WHERE object_id = OBJECT_ID('sys.dm_exec_query_statistics_xml') AND name = 'query_plan')
- BEGIN
-  SET @QueryStatsXMLselect = N' CAST(COALESCE(qs_live.query_plan, ''<?No live query plan available. To turn on live plans, see https://www.BrentOzar.com/go/liveplans ?>'') AS XML) AS live_query_plan , ';
-  SET @QueryStatsXMLSQL = N'OUTER APPLY sys.dm_exec_query_statistics_xml(s.session_id) qs_live';
- END
- ELSE
- BEGIN
-  SET @QueryStatsXMLselect = N' NULL AS live_query_plan , ';
-  SET @QueryStatsXMLSQL = N' ';
- END
 
 SET @QueryStatsXMLselect = N' NULL AS live_query_plan , ';
 
