@@ -30,7 +30,7 @@ BEGIN
 	SET NOCOUNT ON;
 	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 	
-	SELECT @Version = '8.02', @VersionDate = '20210322';
+	SELECT @Version = '8.03', @VersionDate = '20210420';
     
 	IF(@VersionCheckMode = 1)
 	BEGIN
@@ -265,6 +265,20 @@ IF @OutputDatabaseName IS NOT NULL AND @OutputSchemaName IS NOT NULL AND @Output
 	SET @StringToExecute = N'IF NOT EXISTS (SELECT * FROM ' + @OutputDatabaseName + N'.sys.all_columns 
 		WHERE object_id = (OBJECT_ID(''' + @ObjectFullName + N''')) AND name = ''JoinKey'')
 		ALTER TABLE ' + @ObjectFullName + N' ADD JoinKey AS ServerName + CAST(CheckDate AS NVARCHAR(50));';
+	EXEC(@StringToExecute);
+
+	/* If the table doesn't have the new cached_parameter_info computed column, add it. See Github #2842. */
+	SET @ObjectFullName = @OutputDatabaseName + N'.' + @OutputSchemaName + N'.' +  @OutputTableName;
+	SET @StringToExecute = N'IF NOT EXISTS (SELECT * FROM ' + @OutputDatabaseName + N'.sys.all_columns 
+		WHERE object_id = (OBJECT_ID(''' + @ObjectFullName + N''')) AND name = ''cached_parameter_info'')
+		ALTER TABLE ' + @ObjectFullName + N' ADD cached_parameter_info NVARCHAR(MAX) NULL;';
+	EXEC(@StringToExecute);
+
+	/* If the table doesn't have the new live_parameter_info computed column, add it. See Github #2842. */
+	SET @ObjectFullName = @OutputDatabaseName + N'.' + @OutputSchemaName + N'.' +  @OutputTableName;
+	SET @StringToExecute = N'IF NOT EXISTS (SELECT * FROM ' + @OutputDatabaseName + N'.sys.all_columns 
+		WHERE object_id = (OBJECT_ID(''' + @ObjectFullName + N''')) AND name = ''live_parameter_info'')
+		ALTER TABLE ' + @ObjectFullName + N' ADD live_parameter_info NVARCHAR(MAX) NULL;';
 	EXEC(@StringToExecute);
 
 	/* Delete history older than @OutputTableRetentionDays */
@@ -808,7 +822,7 @@ IF @ProductVersionMajor >= 11
 						     + @QueryStatsXMLselect
 						    +' 
 			       derp.query_plan ,
-				   CAST(COALESCE(qs_live.query_plan, ''<?No live query plan available. To turn on live plans, see https://www.BrentOzar.com/go/liveplans ?>'') AS XML) AS live_query_plan ,
+				   CAST(COALESCE(qs_live.Query_Plan, ''<?No live query plan available. To turn on live plans, see https://www.BrentOzar.com/go/liveplans ?>'') AS XML) AS live_query_plan ,
 					STUFF((SELECT DISTINCT N'', '' + Node.Data.value(''(@Column)[1]'', ''NVARCHAR(4000)'') + N'' {'' + Node.Data.value(''(@ParameterDataType)[1]'', ''NVARCHAR(4000)'') + N''}: '' + Node.Data.value(''(@ParameterCompiledValue)[1]'', ''NVARCHAR(4000)'')
 						FROM derp.query_plan.nodes(''/*:ShowPlanXML/*:BatchSequence/*:Batch/*:Statements/*:StmtSimple/*:QueryPlan/*:ParameterList/*:ColumnReference'') AS Node(Data)
 						FOR XML PATH('''')), 1,2,'''')
@@ -1042,13 +1056,13 @@ IF @ProductVersionMajor >= 11
 	    ) as tempdb_allocations
 
 		OUTER APPLY (
-			SELECT TOP 1 query_plan,
+			SELECT TOP 1 Query_Plan,
 			STUFF((SELECT DISTINCT N'', '' + Node.Data.value(''(@Column)[1]'', ''NVARCHAR(4000)'') + N'' {'' + Node.Data.value(''(@ParameterDataType)[1]'', ''NVARCHAR(4000)'') + N''}: '' + Node.Data.value(''(@ParameterCompiledValue)[1]'', ''NVARCHAR(4000)'') + N'' (Actual: '' + Node.Data.value(''(@ParameterRuntimeValue)[1]'', ''NVARCHAR(4000)'') + N'')''
-					FROM q.query_plan.nodes(''/*:ShowPlanXML/*:BatchSequence/*:Batch/*:Statements/*:StmtSimple/*:QueryPlan/*:ParameterList/*:ColumnReference'') AS Node(Data)
+					FROM q.Query_Plan.nodes(''/*:ShowPlanXML/*:BatchSequence/*:Batch/*:Statements/*:StmtSimple/*:QueryPlan/*:ParameterList/*:ColumnReference'') AS Node(Data)
 					FOR XML PATH('''')), 1,2,'''')
 					AS Live_Parameter_Info
 			FROM @LiveQueryPlans q
-			WHERE (s.session_id = q.session_id)
+			WHERE (s.session_id = q.Session_Id)
 
 		) AS qs_live
 
@@ -1141,7 +1155,7 @@ IF @OutputDatabaseName IS NOT NULL AND @OutputSchemaName IS NOT NULL AND @Output
 	,[query_text]
 	,[query_plan]'
     + CASE WHEN @ProductVersionMajor >= 11 THEN N',[live_query_plan]' ELSE N'' END + N'
-	,[Cached_Parameter_Info]'
+	+ CASE WHEN @ProductVersionMajor >= 11 THEN N',[cached_parameter_info]'  ELSE N'' END
 	+ CASE WHEN @ProductVersionMajor >= 11 AND @ShowActualParameters = 1 THEN N',[Live_Parameter_Info]' ELSE N'' END + N'
 	,[query_cost]
 	,[status]
